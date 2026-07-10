@@ -16,16 +16,13 @@ import sys
 import os
 import matplotlib.pyplot as plt
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-resize_224 = T.Resize((224,224)) #定义一个变换器，专门用于推理阶段把任意输入缩放到 224×224
+resize_224 = T.Resize((224,224)) 
 
 
 grid_h = predefine.GRID_H
 grid_w = predefine.GRID_W
 
 
-# draw mesh on image
-# warp: h*w*3
-# f_local: grid_h*grid_w*2
 def draw_mesh_on_warp(warp, f_local):
     warp = np.ascontiguousarray(warp)
 
@@ -81,12 +78,7 @@ def get_stack_mesh(mesh):
 
 
 def mask_boundary_motion(motion):
-    """
-    只约束法向分量：
-    - 上/下边界：禁止 y 方向位移，保留 x 方向滑动
-    - 左/右边界：禁止 x 方向位移，保留 y 方向滑动
-    - 四个角点：两维都固定
-    """
+
     m = motion.clone()
 
     # top / bottom: fix normal (y), keep tangential (x)
@@ -136,13 +128,7 @@ def build_model(net, input_tensor, is_training):
     min_scale = 0.25
     max_scale = 0.5
     scale_factor = random.uniform(min_scale, max_scale)
-    # scale_factor=0.4#debug固定值
 
-    # #y向缩
-    # out_h = int(img_h * scale_factor) 
-    # out_w = img_w
-
-    #x向缩
     out_h = img_h 
     out_w = int(img_w * scale_factor)
 
@@ -156,14 +142,6 @@ def build_model(net, input_tensor, is_training):
     stack_rigid_mesh = get_stack_mesh(norm_rigid_mesh)
     stack_mesh_pri = get_stack_mesh(norm_mesh_pri)
 
-    # #检查mesh是否在进入tps前就退化了
-    # dx = mesh_pri[:, :, 1:, :] - mesh_pri[:, :, :-1, :]
-    # dy = mesh_pri[:, 1:, :, :] - mesh_pri[:, :-1, :, :]
-    # dx_len = torch.norm(dx, dim=-1)
-    # dy_len = torch.norm(dy, dim=-1)
-    # print("motion abs max =", motion_primary.abs().max().item())
-    # print("mesh_pri horizontal min =", dx_len.min().item())
-    # print("mesh_pri vertical   min =", dy_len.min().item())
     
 
     mask = torch.ones_like(input_tensor)
@@ -175,10 +153,6 @@ def build_model(net, input_tensor, is_training):
     out_tps_pri = torch_tps_transform.transformer(torch.cat((input_tensor, mask), 1), stack_mesh_pri, stack_rigid_mesh,  (out_h, out_w))
     warp_mesh_pri = out_tps_pri[:,0:3,...]   
     
-    '''
-    warp = ((warp_mesh_pri[0]+1)*127.5).cpu().detach().numpy().transpose(1,2,0)
-    cv2.imwrite('output_image_rgb1.png', warp)
-    '''
  
     out_dict.update(motion_primary=motion_primary, warp_primary = warp_mesh_pri, rigid_mesh = rigid_mesh, mesh_pri=mesh_pri, ori_mesh = ori_mesh)
  
@@ -225,7 +199,7 @@ class Network(nn.Module):
     def __init__(self,motion_init_value=None):
         super(Network, self).__init__()
 
-        #压缩512通道为16通道
+
         self.feature_compress = nn.Sequential(
             nn.Conv2d(512, 16, kernel_size=1, bias=False),
             nn.ReLU(inplace=True),
@@ -259,7 +233,7 @@ class Network(nn.Module):
             nn.Linear(in_features=1152,out_features=(grid_w+1)*(grid_h+1)*2, bias=True),#576
         )
 
-        #让模型一开始输出 mesh_shift_primary = 0，也就是先从刚性网格开始，而不是从随机形变网格开始。
+        
         last_linear = self.regressNet_part2[0]
         nn.init.zeros_(last_linear.weight)
         nn.init.zeros_(last_linear.bias)
@@ -302,11 +276,9 @@ class Network(nn.Module):
         input_tensor = (input_tensor + 1) / 2
         
         features = self.feature_extractor(input_tensor)
-        #压缩通道
+
         features = self.feature_compress(features)
-        #取最后两通道的特征
-        # features = features[:, -2:, :, :].contiguous()
-        
+
         temp1 = self.regressNet_part1(features)
         temp1 = temp1.reshape(temp1.size(0), -1)  
         mesh_shift_primary = self.regressNet_part2(temp1)   

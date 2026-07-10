@@ -18,7 +18,7 @@ from mpl_toolkits.mplot3d import Axes3D
 last_path = os.path.abspath(os.path.join(os.path.dirname("__file__"), os.path.pardir))
 
 
-model_yolo = YOLO('/paddle/Zzr/Object-IR-main/model/yolo11n.pt')
+model_yolo = YOLO('')
 def draw_box(img, boxes, color_dict, save_path):
     for i, box in enumerate(boxes):
         x1, y1, x2, y2 = map(int, box)
@@ -35,7 +35,7 @@ def distoration_loss(input_tensor, output_tensor):
     output_tensor = (output_tensor + 1) / 2
 
 
-    model_yolo = YOLO('/paddle/Zzr/Object-IR-main/model/yolo11n.pt')
+    model_yolo = YOLO('')
     results_img1 = model_yolo.predict(input_tensor, verbose=False)
     results_img2 = model_yolo.predict(output_tensor, verbose=False)
 

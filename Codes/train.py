@@ -2,9 +2,7 @@ import os
 import sys
 
 def _configure_cuda_from_argv(default_gpu=""):
-    """
-    在 import torch 之前，根据命令行中的 --gpu 提前设置 CUDA 环境变量
-    """
+
     gpu = default_gpu
     argv = sys.argv[1:]
 
@@ -33,49 +31,26 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from network2 import build_model, Network
+from Codes.network import build_model, Network
 from dataset import TrainDataset
 
-from loss4_allpixel_dabef import (
+from Codes.loss import (
     salient_shape_loss,
     salient_rect_loss,
     global_rect_loss,
     b_loss,
     folding_loss,
-    # global_smoothness_loss,
     global_smoothness_angle_loss,
     salient_reposition_loss,
     grid_w,
     grid_h,
 )
 
-# from loss4_gridmean_shape import (
-#     salient_shape_loss,
-#     salient_rect_loss,
-#     global_rect_loss,
-#     b_loss,
-#     folding_loss,
-#     global_smoothness_loss,
-#     salient_reposition_loss,
-#     grid_w,
-#     grid_h,
-# )
-
 last_path = os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir))
 
 
-def set_seed(seed=42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    # 为了对照实验更可复现
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
 
 def train(args):
-    set_seed(args.seed)
 
     batch_size = args.batch_size
     USE_SHAPE = args.enable_w_l
@@ -145,59 +120,7 @@ def train(args):
     score_print_fre = 50
     start_time = time.time()
 
-    # # ==============================
-    # # 固定静态权重（除 smooth 外）
-    # # ==============================
-    # lam_move = args.lam_move
-    # lam_shape = args.lam_shape
-    # lam_rect = args.lam_rect
-    # lam_global_rect = args.lam_global_rect
-    # lam_fold = args.lam_fold
-    # lam_b = args.lam_b
-
-    # enable_global_rect = (lam_global_rect > 0.0)
-
-    # print(
-    #     f"Base Weights -> "
-    #     f"Move:{lam_move:.1f} | Shape:{lam_shape:.1f} | Rect:{lam_rect:.1f} | "
-    #     f"GRect:{lam_global_rect:.1f} | "
-    #     f"Fold:{lam_fold:.1f} | Boundary:{lam_b:.1f}"
-    # )
-
-    # for epoch in range(start_epoch, args.max_epoch):
-    #     net.train()
-
-    #     # smooth 权重调度：
-    #     # 前 30 轮保持 0.05
-    #     # 第 30~40 轮 cosine 平滑回升到 0.07
-    #     # 40 轮后保持 0.07
-    #     if epoch < 30:
-    #         lam_smooth = 0.05
-    #     elif epoch < 40:
-    #         t = (epoch - 30) / 10.0
-    #         lam_smooth = 0.05 + 0.5 * (0.07 - 0.05) * (1 - math.cos(math.pi * t))
-    #     else:
-    #         lam_smooth = 0.07
-
-    #     print(
-    #         f"Epoch {epoch:03d} | SmoothSchedule | "
-    #         f"lr={optimizer.state_dict()['param_groups'][0]['lr']:.6f} | "
-    #         f"lam_smooth={lam_smooth:.4f}"
-    #     )
-
-    #     loss_sigma = 0.0
-    #     shape_sigma = 0.0
-    #     rect_sigma = 0.0
-    #     global_rect_sigma = 0.0
-    #     fold_sigma = 0.0
-    #     smooth_sigma = 0.0
-    #     boundary_sigma = 0.0
-    #     move_sigma = 0.0
-    #     move_l1_sigma = 0.0
-    #     move_shift_sigma = 0.0
-    # # ==============================
-    # # 固定静态权重
-    # # ==============================
+   
     lam_move = args.lam_move
     lam_shape = args.lam_shape
     lam_rect = args.lam_rect
@@ -218,7 +141,7 @@ def train(args):
     for epoch in range(start_epoch, args.max_epoch):
         net.train()
 
-        # 当前 epoch 的累计 loss
+
         loss_sigma = 0.0
         shape_sigma = 0.0
         rect_sigma = 0.0
@@ -230,7 +153,6 @@ def train(args):
         move_l1_sigma = 0.0
         move_shift_sigma = 0.0
 
-        # fold 子项监控
         edge_mean_sigma = 0.0
         edge_max_sigma = 0.0
         area_mean_sigma = 0.0
@@ -255,7 +177,6 @@ def train(args):
 
             optimizer.zero_grad()
 
-            # 1. 前向传播
             batch_out = build_model(net, inpu_tensor, is_training=True)
             warp_image = batch_out["warp_primary"]
             mesh = batch_out["mesh_pri"]
@@ -263,7 +184,6 @@ def train(args):
             motion = batch_out["motion_primary"]
             _, _, out_h, out_w = warp_image.shape
 
-            # 2. 计算各项损失
             shape_loss = salient_shape_loss(
                 inpu_tensor, warp_image, ori_mesh, mesh,
                 iim=iim_tensor, enable=USE_SHAPE
@@ -308,7 +228,6 @@ def train(args):
 
             boundary_loss = b_loss(warp_image, mesh, motion)
 
-            # 3. 固定权重加和
             shape_scaled = lam_shape * shape_loss
             rect_scaled = lam_rect * rect_loss
             global_rect_scaled = lam_global_rect * global_rect
@@ -327,12 +246,12 @@ def train(args):
                 + move_scaled
             )
 
-            # 4. 反向传播
+
             total_loss.backward()
             torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=3, norm_type=2)
             optimizer.step()
 
-            # 5. 累计
+
             loss_sigma += float(total_loss.item())
             shape_sigma += float(shape_scaled.item())
             rect_sigma += float(rect_scaled.item())
@@ -349,7 +268,7 @@ def train(args):
             area_mean_sigma += float(fold_items["area_mean"].item())
             area_max_sigma += float(fold_items["area_max"].item())
 
-            # 6. 日志
+
             if i % score_print_fre == 0 and i != 0:
                 avg_loss = loss_sigma / score_print_fre
                 avg_shape = shape_sigma / score_print_fre
@@ -399,7 +318,7 @@ def train(args):
                 writer.add_scalar("Move/L1_Dist", avg_move_l1, glob_iter)
                 writer.add_scalar("Move/Shift", avg_move_shift, glob_iter)
 
-                # 清零
+
                 loss_sigma = 0.0
                 shape_sigma = 0.0
                 rect_sigma = 0.0
@@ -420,7 +339,7 @@ def train(args):
 
         scheduler.step()
 
-        # 7. 保存模型
+
         if ((epoch + 1) % 5 == 0) or ((epoch + 1) == args.max_epoch):
             filename = "epoch" + str(epoch + 1).zfill(3) + "_model.pth"
             model_save_path = os.path.join(ckpt_dir, filename)
@@ -449,33 +368,29 @@ if __name__ == "__main__":
     parser.add_argument("--lr", type=float, default=3e-5)
     parser.add_argument("--lr_gamma", type=float, default=0.97)
 
-    parser.add_argument("--train_path", type=str, default="/paddle/Zzr/Object-IR-saliency/Data/train")
-    parser.add_argument("--saliency_root", type=str, default="/paddle/Zzr/MDSAM-master/out/input")
+    parser.add_argument("--train_path", type=str, default="")
+    parser.add_argument("--saliency_root", type=str, default="")
 
-    parser.add_argument("--exp_name", type=str, default="v5_allpixel_rect", help="experiment name")
-    parser.add_argument("--log_root", type=str, default="run5", help="root dir for tensorboard logs")
-    parser.add_argument("--ckpt_root", type=str, default="checkpoint5", help="root dir for model checkpoints")
+    parser.add_argument("--exp_name", type=str, default="", help="experiment name")
+    parser.add_argument("--log_root", type=str, default="run", help="root dir for tensorboard logs")
+    parser.add_argument("--ckpt_root", type=str, default="checkpoint", help="root dir for model checkpoints")
     parser.add_argument("--resume", action="store_true", help="resume training")
 
-    # 注意：这两个默认仍是 False，训练命令里请显式加上
+
     parser.add_argument("--enable_w_l", action="store_true", help="enable shape loss")
     parser.add_argument("--enable_g_l", action="store_true", help="enable rect loss")
 
-    # 固定静态权重
+
     parser.add_argument("--lam_move", type=float, default=0.0)
     parser.add_argument("--lam_shape", type=float, default=0.0)
     parser.add_argument("--lam_rect", type=float, default=950.0)#950
-    # parser.add_argument("--lam_rect", type=float, default=450.0)#950
+
     parser.add_argument("--lam_smooth", type=float, default=0.1)
     parser.add_argument("--lam_global_rect", type=float, default=450.0)#450
-    # parser.add_argument("--lam_global_rect", type=float, default=450.0)
+
     parser.add_argument("--lam_fold", type=float, default=25.0)
     
-    # parser.add_argument("--lam_shape", type=float, default=300.0)
-    # parser.add_argument("--lam_rect", type=float, default=950.0)
-    # parser.add_argument("--lam_smooth", type=float, default=0.0)
-    # parser.add_argument("--lam_global_rect", type=float, default=450.0)
-    # parser.add_argument("--lam_fold", type=float, default=25.0)
+
     parser.add_argument("--lam_b", type=float, default=0.0)
 
     args = parser.parse_args()

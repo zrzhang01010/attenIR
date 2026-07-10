@@ -4,9 +4,7 @@ import sys
 
 
 def _configure_cuda_from_argv(default_gpu="0"):
-    """
-    在 import torch 之前，根据命令行中的 --gpu 提前设置 CUDA 环境变量
-    """
+
     gpu = default_gpu
     argv = sys.argv[1:]
 
@@ -38,53 +36,32 @@ from torch.utils.data import DataLoader
 import predefine
 import utils.torch_tps_transform as torch_tps_transform
 from dataset import OutDataset
-from network2 import Network, output_model, get_rigid_mesh, get_norm_mesh, get_stack_mesh
+from Codes.network import Network, output_model, get_rigid_mesh, get_norm_mesh, get_stack_mesh
 
 
 grid_h = predefine.GRID_H
 grid_w = predefine.GRID_W
 
-# def get_salient_omega(iim_tensor, grid_size, tau=10.0):
-#     """
-#     推理阶段使用的权重提取函数，与训练保持一致。
-#     iim_tensor: [1, 1, H, W]
-#     tau: 推荐值 10.0，越大对小目标越敏感。
-#     """
-#     gh, gw = grid_size
-#     B, C, H, W = iim_tensor.shape
-#     kh, kw = H // gh, W // gw
-    
-#     # 核心：使用 LogSumExp 聚合
-#     iim_exp = torch.exp(tau * iim_tensor)
-#     avg_exp = F.avg_pool2d(iim_exp, kernel_size=(kh, kw), stride=(kh, kw))
-#     omega = torch.log(avg_exp + 1e-6) / tau
-    
-#     return omega[0, 0] # 返回 [gh, gw] 的 numpy 数组
 
 def get_salient_omega(iim_tensor, grid_size, tau=0.001):
     gh, gw = grid_size
     B, C, H, W = iim_tensor.shape
     kh, kw = H // gh, W // gw
     
-    # --- 数值稳定性处理 ---
-    # 先减去局部最大值，防止 exp 爆炸 (类似 Softmax 的标准做法)
-    # 使用 max_pool 获取每个 cell 的最大值
+
     local_max = F.max_pool2d(iim_tensor, kernel_size=(kh, kw), stride=(kh, kw))
-    
-    # 展开 local_max 使其形状对齐 iim_tensor 从而可以相减
-    # (或者使用 interpolate 放大，这里简单处理)
+
     iim_stable = iim_tensor - F.interpolate(local_max, size=(H, W), mode='nearest')
     
     iim_exp = torch.exp(tau * iim_stable)
     avg_exp = F.avg_pool2d(iim_exp, kernel_size=(kh, kw), stride=(kh, kw))
-    
-    # LogSumExp 公式还原：log(sum(exp(x-max))/n) + max
+
     omega = (torch.log(avg_exp + 1e-6) / tau) + local_max
     
-    return omega[0, 0].clamp(0.0, 1.0) # 确保回归到 [0,1]
+    return omega[0, 0].clamp(0.0, 1.0) 
 
 def draw_mesh_on_warp(warp, f_local):
-    # warp: HxWx3 (BGR), f_local: (grid_h+1)x(grid_w+1)x2
+
     warp = np.ascontiguousarray(warp)
     point_color = (0, 0, 255)  # BGR red
     thickness = 2
@@ -184,7 +161,7 @@ def load_saliency(path, target_hw, warned_flag):
 
 
 def omega_to_gray(omega, out_hw):
-    # omega: [grid_h, grid_w] in [0,1] or arbitrary range
+   
     om = omega.astype(np.float32)
     om_min = float(om.min())
     om_max = float(om.max())
@@ -198,7 +175,7 @@ def omega_to_gray(omega, out_hw):
 
 
 def warp_saliency(iim_tensor, mesh, ratio_h, ratio_w):
-    # iim_tensor: [B,1,H,W], mesh: [B,gh+1,gw+1,2]
+
     b, _, img_h, img_w = iim_tensor.shape
     warp_h = int(img_h * ratio_h)
     warp_w = int(img_w * ratio_w)
@@ -318,7 +295,7 @@ def test(args):
         # ----- omega visualization -----
         # omega = F.adaptive_avg_pool2d(iim_tensor, (grid_h, grid_w))[0, 0].cpu().numpy()
 
-        # 修改后：使用保峰值的提取方式
+
         with torch.no_grad():
             omega_tensor = get_salient_omega(iim_tensor, (grid_h, grid_w), tau=0.01)
             omega = omega_tensor.cpu().numpy()
@@ -370,7 +347,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--gpu", type=str, default="1")
     parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--test_path", type=str, default="/paddle/Zzr/Object-IR-saliency/Data/RetargetMe")
+    parser.add_argument("--test_path", type=str, default="")
     parser.add_argument("--ratio_h", type=float, default=1.0)
     parser.add_argument("--ratio_w", type=float, default=0.5)
 
@@ -383,14 +360,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_dir",
         type=str,
-        default="/paddle/Zzr/Object-IR-saliency/checkpoints/saliency",
+        default="",
         help="Directory containing .pth checkpoints (used when ckpt_path is empty).",
     )
 
     parser.add_argument(
         "--out_dir",
         type=str,
-        default="/paddle/Zzr/Object-IR-saliency/out/MDSAM14/epoch30/0.5",
+        default="",
         help="Output directory for warp, omega, saliency_warp, saliency_warp_grid, and mesh visualization results.",
     )
     parser.add_argument("--warp_dir", type=str, default="", help="Override warp output dir")
@@ -413,7 +390,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--saliency_dir",
         type=str,
-        default="/paddle/Zzr/MDSAM-master/out/RetargetMe",
+        default="",
         help="Directory containing saliency maps (grayscale).",
     )
     parser.add_argument(
